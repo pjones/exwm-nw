@@ -4,7 +4,7 @@
 
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/exwm-nw
-;; Package-Requires: ((emacs "24.4") (exwm "0.18"))
+;; Package-Requires: ((emacs "25.1") (exwm "0.18"))
 ;; Version: 0.1.0
 ;;
 ;; This file is not part of GNU Emacs.
@@ -189,6 +189,7 @@ some recommendations:
 
 Enjoy!"
   :group  'exwm-nw
+  :require 'exwm-nw
   :keymap 'exwm-nw-mode-map
   :global t
   (if exwm-nw-mode
