@@ -162,9 +162,14 @@ When ALLOW-CREATE is non-nil, allow creating new workspaces."
     (if selected (exwm-nw--goto-workspace
                   (exwm-workspace--workspace-from-frame-or-index selected))
       (when allow-create
-        (exwm-workspace-switch-create (exwm-workspace--count))
-        (exwm-nw-set exwm-workspace--current result)
-        (exwm-nw--goto-workspace exwm-workspace--current)))))
+        (if (minibuffer-window-active-p (selected-window))
+            (let ((exwm-workspace--prompt-add-allowed t))
+              (exwm-workspace--prompt-add)
+              (let* ((n (1- (exwm-workspace--count)))
+                     (ws (exwm-workspace--workspace-from-frame-or-index n)))
+                (exwm-nw-set ws result)
+                (exwm-nw--goto-workspace ws)))
+          (exwm-nw-set (make-frame) result))))))
 
 ;;;###autoload
 (define-minor-mode exwm-nw-mode
