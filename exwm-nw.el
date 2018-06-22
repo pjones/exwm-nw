@@ -11,7 +11,8 @@
 
 ;;; Commentary:
 ;;
-;; FIXME:
+;; Assign names to EXWM worspaces and jump to workspaces using their
+;; names.  See the documentation for `exwm-nw-mode'.
 
 ;;; License:
 ;;
@@ -36,6 +37,7 @@
 
 ;;; Code:
 (require 'ring)
+(require 'map)
 (require 'exwm)
 
 
@@ -56,10 +58,10 @@ workspaces."
 (defvar exwm-nw-mode-map (make-sparse-keymap)
   "Key map for the `exwm-nw' minor mode.")
 
-(defvar exwm-nw-prev-workspace-index-map exwm-workspace-index-map
+(defvar exwm-nw--prev-workspace-index-map exwm-workspace-index-map
   "Used to restore the previous value of `exwm-workspace-index-map'.")
 
-(defvar exwm-nw-workspace-ring nil
+(defvar exwm-nw--workspace-ring nil
   "Ring of workspaces.")
 
 (defvar exwm-nw--previous-workspace nil
@@ -67,16 +69,11 @@ workspaces."
 
 
 ;; Internal Functions
-(defun exwm-nw-set-name-prompt (workspace)
+(defun exwm-nw--set-name-prompt (workspace)
   "Prompt for the new name of WORKSPACE."
-  (read-string "Workspace Name: " (exwm-nw-get workspace)))
+  (read-string "Workspace name: " (exwm-nw-get workspace)))
 
-(defun exwm-nw-get (frame-or-index)
-  "Return the name of the workspace identified by FRAME-OR-INDEX."
-  (let ((ws (exwm-workspace--workspace-from-frame-or-index frame-or-index)))
-    (frame-parameter ws 'exwm-nw-name)))
-
-(defun exwm-nw-format (index)
+(defun exwm-nw--format (index)
   "Format the name of the workspace at INDEX."
   (let ((name (exwm-nw-get index)))
     (if name (format "%s:%s" index name)
@@ -92,7 +89,7 @@ workspaces."
              (not (equal exwm-nw--previous-workspace
                          exwm-workspace--current)))
     (ring-remove+insert+extend
-     exwm-nw-workspace-ring
+     exwm-nw--workspace-ring
      exwm-nw--previous-workspace)))
 
 (defun exwm-nw--goto-workspace (workspace)
@@ -104,8 +101,30 @@ workspaces."
           (exit-minibuffer)))
     (exwm-workspace-switch workspace)))
 
+(defun exwm-nw--workspace-alist (keep-current)
+  "Return an alist of workspace names and their indexes.
+
+When KEEP-CURRENT is non-nil then the current workspace will be
+included in the returned alist.
+
+The alist is ordered so that recently visited workspaces come first."
+  (let ((current exwm-workspace--current) names)
+    (dolist (w (append (ring-elements exwm-nw--workspace-ring)
+                       exwm-workspace--list))
+      (if (and (exwm-workspace--workspace-p w)
+               (or keep-current (not (eq w current))))
+          (let ((name (exwm-nw-get w))
+                (pos  (exwm-workspace--position w)))
+            (if (and name (not (assoc name names)))
+                (setq names (append names (list (cons name pos))))))))
+    names))
+
 
 ;; Public functions:
+(defun exwm-nw-get (frame-or-index)
+  "Return the name of the workspace identified by FRAME-OR-INDEX."
+  (let ((ws (exwm-workspace--workspace-from-frame-or-index frame-or-index)))
+    (frame-parameter ws 'exwm-nw-name)))
 
 ;;;###autoload
 (defun exwm-nw-set (frame-or-index &optional name)
@@ -115,7 +134,7 @@ You probably want to bind this function to a key in
 `exwm-nw-mode-map'."
   (interactive (list exwm-workspace--current nil))
   (let* ((ws (exwm-workspace--workspace-from-frame-or-index frame-or-index))
-         (name (or name (exwm-nw-set-name-prompt ws))))
+         (name (or name (exwm-nw--set-name-prompt ws))))
     (when (and ws name)
       (set-frame-parameter ws 'exwm-nw-name name)
       (setq exwm-workspace--switch-history-outdated t))))
@@ -127,8 +146,25 @@ You probably want to bind this function to a key in
 You may want to bind this function to a key in `exwm-nw-mode-map'
 and in `exwm-workspace--switch-map'."
   (interactive)
-  (let ((ws (ring-ref exwm-nw-workspace-ring 0)))
+  (let ((ws (ring-ref exwm-nw--workspace-ring 0)))
     (when ws (exwm-nw--goto-workspace ws))))
+
+;;;###autoload
+(defun exwm-nw-find-workspace (allow-create)
+  "Pick a workspace from a completion list and go there.
+
+When ALLOW-CREATE is non-nil, allow creating new workspaces."
+  (interactive "P")
+  (let* ((names (exwm-nw--workspace-alist nil))
+         (must-match (if allow-create 'confirm t))
+         (result (completing-read "Workspace: " names nil must-match))
+         (selected (cdr (assoc result names))))
+    (if selected (exwm-nw--goto-workspace
+                  (exwm-workspace--workspace-from-frame-or-index selected))
+      (when allow-create
+        (exwm-workspace-switch-create (exwm-workspace--count))
+        (exwm-nw-set exwm-workspace--current result)
+        (exwm-nw--goto-workspace exwm-workspace--current)))))
 
 ;;;###autoload
 (define-minor-mode exwm-nw-mode
@@ -136,17 +172,19 @@ and in `exwm-workspace--switch-map'."
 
 Some of its features are:
 
-  - Assign a name to a workspace (`exwm-nw-set')
   - Keep a history of workspaces in a ring
+  - Assign a name to a workspace (`exwm-nw-set')
   - Jump to the previous workspace (`exwm-nw-goto-previous')
+  - Jump to a workspace by name (`exwm-nw-find-workspace')
 
 By default this minor mode does not have any keybindings in order
 to avoid clobbering any bindings you may already have.  Here are
 some recommendations:
 
-
     (define-key exwm-nw-mode-map (kbd \"s-n\") 'exwm-nw-set)
     (define-key exwm-nw-mode-map (kbd \"s-l\") 'exwm-nw-goto-previous)
+    (define-key exwm-workspace--switch-map (kbd \"C-u\") 'universal-argument)
+    (define-key exwm-workspace--switch-map (kbd \"C-s\") 'exwm-nw-find-workspace)
     (define-key exwm-workspace--switch-map (kbd \"C-l\") 'exwm-nw-goto-previous)
 
 Enjoy!"
@@ -155,12 +193,12 @@ Enjoy!"
   :global t
   (if exwm-nw-mode
       (progn
-        (setq exwm-nw-prev-workspace-index-map exwm-workspace-index-map
-              exwm-workspace-index-map #'exwm-nw-format
-              exwm-nw-workspace-ring (make-ring exwm-nw-workspace-ring-size))
+        (setq exwm-nw--prev-workspace-index-map exwm-workspace-index-map
+              exwm-workspace-index-map #'exwm-nw--format
+              exwm-nw--workspace-ring (make-ring exwm-nw-workspace-ring-size))
         (add-hook 'exwm-workspace-switch-hook #'exwm-nw--workspace-switch-hook)
         (advice-add 'exwm-workspace-switch :before #'exwm-nw--remember-current-workspace))
-    (setq exwm-workspace-index-map exwm-nw-prev-workspace-index-map)
+    (setq exwm-workspace-index-map exwm-nw--prev-workspace-index-map)
     (remove-hook 'exwm-workspace-switch-hook #'exwm-nw--workspace-switch-hook)
     (advice-remove 'exwm-workspace-switch #'exwm-nw--remember-current-workspace)))
 
