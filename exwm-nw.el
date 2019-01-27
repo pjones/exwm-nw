@@ -1,11 +1,11 @@
 ;;; exwm-nw.el --- Named workspaces for EXWM. -*- lexical-binding: t -*-
 
-;; Copyright (C) 2018 Peter Jones <pjones@devalot.com>
+;; Copyright (C) 2018-2019 Peter Jones <pjones@devalot.com>
 
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/exwm-nw
 ;; Package-Requires: ((emacs "25.1") (exwm "0.18"))
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;;
 ;; This file is not part of GNU Emacs.
 
@@ -113,8 +113,8 @@ The alist is ordered so that recently visited workspaces come first."
                        exwm-workspace--list))
       (if (and (exwm-workspace--workspace-p w)
                (or keep-current (not (eq w current))))
-          (let ((name (exwm-nw-get-name w))
-                (pos  (exwm-workspace--position w)))
+          (let* ((pos (exwm-workspace--position w))
+                 (name (exwm-nw--format pos)))
             (if (and name (not (assoc name names)))
                 (setq names (append names (list (cons name pos))))))))
     names))
@@ -134,10 +134,15 @@ The alist is ordered so that recently visited workspaces come first."
       (call-interactively 'exwm-workspace-switch))))
 
 ;; Public functions:
-(defun exwm-nw-get-name (frame-or-index)
-  "Return the name of the workspace identified by FRAME-OR-INDEX."
-  (let ((ws (exwm-workspace--workspace-from-frame-or-index frame-or-index)))
-    (frame-parameter ws 'exwm-nw-name)))
+;;;###autoload
+(defun exwm-nw-get-name (&optional frame-or-index)
+  "Return the name of the workspace identified by FRAME-OR-INDEX.
+If FRAME-OR-INDEX is not given or nil then return the name of the
+current workspace."
+  (let* ((frame (or frame-or-index exwm-workspace--current))
+         (ws (exwm-workspace--workspace-from-frame-or-index frame))
+         (name (frame-parameter ws 'exwm-nw-name)))
+    (and name (substring-no-properties name))))
 
 ;;;###autoload
 (defun exwm-nw-set-name (frame-or-index &optional name)
